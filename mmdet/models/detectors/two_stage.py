@@ -10,7 +10,18 @@ from mmdet.registry import MODELS
 from mmdet.structures import SampleList
 from mmdet.utils import ConfigType, OptConfigType, OptMultiConfig
 from .base import BaseDetector
+from torch import nn, Tensor
+import torch.nn.functional as F
 
+def _get_activation_fn(activation):
+    """Return an activation function given a string"""
+    if activation == "relu":
+        return F.relu
+    if activation == "gelu":
+        return F.gelu
+    if activation == "glu":
+        return F.glu
+    raise RuntimeError(F"activation should be relu/gelu, not {activation}.")
 
 @MODELS.register_module()
 class TwoStageDetector(BaseDetector):
@@ -63,6 +74,15 @@ class TwoStageDetector(BaseDetector):
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
 
+        d_model=256
+        dim_feedforward=1024
+        dropout=0.1
+        activation="relu"
+        nhead=8
+        self.temporal_query_layer1 = TemporalQueryEncoderLayer(d_model, dim_feedforward, dropout, activation, nhead)
+        self.temporal_query_layer2 = TemporalQueryEncoderLayer(d_model, dim_feedforward, dropout, activation, nhead)
+
+
     def _load_from_state_dict(self, state_dict: dict, prefix: str,
                               local_metadata: dict, strict: bool,
                               missing_keys: Union[List[str], str],
@@ -110,6 +130,24 @@ class TwoStageDetector(BaseDetector):
         x = self.backbone(batch_inputs)
         if self.with_neck:
             x = self.neck(x)
+
+        x1_layer2 = x[2][0:1, :, :, :] 
+        x2_layer2 = x[2][1:2, :, :, :] 
+
+        x1_wrap = x1_layer2.permute(0, 2, 3, 1).reshape(1, -1, 256)
+        x2_wrap = x2_layer2.permute(0, 2, 3, 1).reshape(1, -1, 256)
+        x1_wrap_cross_attn = self.temporal_query_layer1(x1_wrap, x2_wrap)
+        x1_reconstructed = x1_wrap_cross_attn.reshape(1, 48, 84, 256).permute(0, 3, 1, 2)
+
+        x2_wrap_cross_attn = self.temporal_query_layer2(x2_wrap, x1_wrap)
+        x2_reconstructed = x2_wrap_cross_attn.reshape(1, 48, 84, 256).permute(0, 3, 1, 2)
+
+        x_layer2 = torch.cat((x1_reconstructed, x2_reconstructed), dim=0)
+        x_list = list(x)
+        x_list[2] = x_layer2
+        x = tuple(x_list)
+
+
         return x
 
     def _forward(self, batch_inputs: Tensor,
@@ -241,3 +279,55 @@ class TwoStageDetector(BaseDetector):
         batch_data_samples = self.add_pred_to_datasample(
             batch_data_samples, results_list)
         return batch_data_samples
+
+class TemporalQueryEncoderLayer(nn.Module):
+    def __init__(self, d_model = 256, d_ffn = 1024, dropout=0.1, activation="relu", n_heads = 8):
+        super().__init__()
+
+        # self attention 
+        self.self_attn = nn.MultiheadAttention(d_model, n_heads, dropout=dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.norm2 = nn.LayerNorm(d_model)
+
+        # cross attention 
+        self.cross_attn = nn.MultiheadAttention(d_model, n_heads, dropout=dropout)
+        self.dropout1 = nn.Dropout(dropout)
+        self.norm1 = nn.LayerNorm(d_model)
+        # ffn 
+        self.linear1 = nn.Linear(d_model, d_ffn)
+        self.activation = _get_activation_fn(activation)
+        self.dropout3 = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(d_ffn, d_model)
+        self.dropout4 = nn.Dropout(dropout)
+        self.norm3 = nn.LayerNorm(d_model) 
+
+    @staticmethod
+    def with_pos_embed(tensor, pos):
+        return tensor if pos is None else tensor + pos
+
+    def forward_ffn(self, tgt):
+        tgt2 = self.linear2(self.dropout3(self.activation(self.linear1(tgt))))
+        tgt = tgt + self.dropout4(tgt2)
+        tgt = self.norm3(tgt)
+        return tgt
+    
+    def forward(self, query , ref_query, query_pos = None, ref_query_pos = None):
+        # self.attention
+        q = k = self.with_pos_embed(query, query_pos)
+        tgt2 = self.self_attn(q.transpose(0, 1), k.transpose(0, 1), query.transpose(0, 1))[0].transpose(0, 1)
+        tgt = query + self.dropout2(tgt2)
+        tgt = self.norm2(tgt)
+
+        # cross attention 
+        tgt2 = self.cross_attn(
+            self.with_pos_embed(tgt, query_pos).transpose(0, 1), 
+            self.with_pos_embed(ref_query, ref_query_pos).transpose(0, 1),
+            ref_query.transpose(0,1)
+        )[0].transpose(0,1)
+        tgt = tgt + self.dropout1(tgt2)
+        tgt = self.norm1(tgt)
+
+        # ffn
+        tgt = self.forward_ffn(tgt)
+
+        return tgt

@@ -5,7 +5,8 @@ _base_ = [
 ]
 
 dataset_type = 'CocoDataset'
-data_root = '/home/wjy/wujingyi/Dataset/MOT17challenge/'
+# data_root = '/home/wjy/wujingyi/Dataset/MDMTcross/'
+data_root = '../mydev/home/wjy/MDMTcross/'
 img_norm_cfg = dict(mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 
 model = dict(
@@ -65,7 +66,7 @@ model = dict(
             in_channels=256,
             fc_out_channels=1024,
             roi_feat_size=7,
-            num_classes=3,
+            num_classes=4,
             bbox_coder=dict(
                 type='DeltaXYWHBBoxCoder',
                 target_means=[0.0, 0.0, 0.0, 0.0],
@@ -245,6 +246,6 @@ resume_from = None
 workflow = [('train', 1)]
 opencv_num_threads = 0
 mp_start_method = 'fork'
-work_dir = './work_dirs/faster_rcnn_r50_fpn_carafe_1x_full_mdmt'
+work_dir = '../mydev/home/wjy/faster_rcnn_r50_fpn_carafe_1x_full_mdmt'
 auto_resume = False
 gpu_ids = range(0, 2)

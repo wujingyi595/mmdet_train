@@ -16,10 +16,10 @@ class MdmtDataset(BaseDetDataset):
 
     METAINFO = {
         'classes':
-        ('person', 'bicycle', 'car'),
+        ('person', 'bus', 'car', 'bicycle'),
         # palette is a list of color tuples, which is used for visualization.
         'palette':
-        [(220, 20, 60), (119, 11, 32), (0, 0, 142)]
+        [(220, 20, 60), (119, 11, 32), (0, 0, 142), (255,0,0)]
     }
     COCOAPI = COCO
     # ann_id is unique in coco dataset.

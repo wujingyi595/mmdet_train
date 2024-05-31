@@ -1,6 +1,7 @@
 # dataset settings
 dataset_type = 'MdmtDataset'
-data_root = '/home/wjy/wujingyi/Dataset/MOT17challenge/'
+# data_root = '/home/wjy/wujingyi/Dataset/MDMTcross/'
+data_root = '../mydev/home/wjy/MDMTcross/'
 
 # Example to use different file client
 # Method 1: simply set the data root and let the file I/O module
@@ -35,7 +36,7 @@ test_pipeline = [
                    'scale_factor'))
 ]
 train_dataloader = dict(
-    batch_size=2,
+    batch_size=1,
     num_workers=2,
     persistent_workers=True,
     sampler=dict(type='DefaultSampler', shuffle=True),
@@ -83,13 +84,13 @@ test_evaluator = val_evaluator
 #     dataset=dict(
 #         type=dataset_type,
 #         data_root=data_root,
-#         ann_file=data_root + 'annotations/image_info_test-dev2017.json',
-#         data_prefix=dict(img='test2017/'),
+#         ann_file='annotations/test_cocoformat.json',
+#         data_prefix=dict(img='test/'),
 #         test_mode=True,
 #         pipeline=test_pipeline))
 # test_evaluator = dict(
 #     type='CocoMetric',
 #     metric='bbox',
 #     format_only=True,
-#     ann_file=data_root + 'annotations/image_info_test-dev2017.json',
+#     ann_file=data_root + 'annotations/test_cocoformat.json',
 #     outfile_prefix='./work_dirs/coco_detection/test')
